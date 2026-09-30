@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Loup-Garou - Atelier de théorie</title>
+<style>
+:root{--bg:#0f0f10;--pn:#161618;--bd:#2a2a2d;--tx:#e8e8e8;--mu:#8b8b90;--ac:#8f86ff}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font:14px/1.4 system-ui,-apple-system,Segoe UI,sans-serif}
+body{display:grid;grid-template-columns:320px 1fr}
+aside{background:var(--pn);border-right:1px solid var(--bd);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:16px}
+h2{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--mu)}
+button,input{font:inherit;color:var(--tx);background:#202023;border:1px solid var(--bd);border-radius:6px;padding:5px 10px}
+button{cursor:pointer}button:hover{border-color:var(--ac)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--ac);outline-offset:1px}
+button.on{background:var(--ac);border-color:var(--ac);color:#0f0f10}
+.row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.row.sp{justify-content:space-between}
+.stp button{padding:1px 8px}.stp b{min-width:18px;text-align:center}
+input[type=number]{width:64px}
+#pl .row{padding:4px 0;border-bottom:1px solid var(--bd)}
+#pl .dead .nm{text-decoration:line-through;color:var(--mu)}
+#pl small{color:var(--mu)}
+#pl button{padding:2px 7px;font-size:12px}
+#log{max-height:200px;overflow-y:auto;color:var(--mu);font-size:13px}
+#log div{padding:1px 0}
+#stage{position:relative;overflow:hidden;min-height:0}
+#bar{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:3;display:flex;gap:4px;flex-wrap:wrap;justify-content:center;background:var(--pn);border:1px solid var(--bd);border-radius:10px;padding:5px;max-width:96%}
+#bar button{border:0;background:none;padding:5px 8px}
+#bar button.on{background:var(--ac);color:#0f0f10}
+#bar i{width:1px;background:var(--bd);margin:2px 3px}
+.sw{width:18px;height:18px;border-radius:50%!important;padding:0!important;border:2px solid transparent!important;margin:3px 2px}
+.sw.on{border-color:#fff!important;background-clip:padding-box}
+canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+#tok{position:absolute;inset:0;pointer-events:none}
+.tk{position:absolute;width:52px;height:52px;margin:-26px 0 0 -26px;border-radius:50%;border:2px solid #cfcfcf;background:#141416;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:15px;font-weight:600;user-select:none;touch-action:none}
+.tk small{font-size:9px;font-weight:500;line-height:1}
+.tk.dead{opacity:.35}
+.mv .tk{pointer-events:auto;cursor:grab}
+#cv.mv{cursor:default}
+@media(max-width:800px){body{grid-template-columns:1fr;grid-template-rows:65vh auto;height:auto;overflow:auto}#stage{order:-1}aside{border-right:0;border-top:1px solid var(--bd)}}
+</style>
+</head>
+<body>
+<aside>
+  <section>
+    <h2>Composition</h2>
+    <div class="row" style="margin-bottom:8px">
+      <input id="n" type="number" min="3" max="40" value="8" aria-label="Nombre de joueurs">
+      <button id="auto">Composition auto</button>
+    </div>
+    <div id="cmp"></div>
+    <div class="row sp" style="margin-top:8px"><span id="tot" style="color:var(--mu)"></span><button id="ng">Nouvelle partie</button></div>
+  </section>
+  <section>
+    <h2>Simulation</h2>
+    <div class="row"><button id="st">Étape suivante</button><button id="all">Simuler tout</button></div>
+    <label class="row" style="margin-top:8px;color:var(--mu)"><input id="rv" type="checkbox" checked style="width:auto"> Révéler le rôle à la mort</label>
+    <label class="row" style="margin-top:8px;color:var(--mu)"><input id="ds" type="checkbox" style="width:auto"> Disso : un loup peut voter un loup</label>
+    <div id="stat" style="margin-top:8px;color:var(--mu)"></div>
+  </section>
+  <section>
+    <div class="row sp"><h2 style="margin:0">Joueurs</h2><span><button id="ra">Tout révéler</button> <button id="ha">Tout masquer</button></span></div>
+    <div id="pl" style="margin-top:6px"></div>
+  </section>
+  <section><h2>Journal</h2><div id="log"></div></section>
+</aside>
+
+<main id="stage">
+  <div id="bar"></div>
+  <canvas id="cv"></canvas>
+  <div id="tok"></div>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const ROLES={loup:{n:'Loup-garou',a:'LG',c:'#ff8a8a'},vill:{n:'Villageois',a:'VI',c:'#b8b8b8'},voy:{n:'Voyante',a:'VY',c:'#5aa9f0'},sor:{n:'Sorcière',a:'SO',c:'#a99bff'},cha:{n:'Chasseur',a:'CH',c:'#d9902f'}};
+const VM={};
+let cnt={loup:2,vill:3,voy:1,sor:1,cha:1},G=null;
+const pick=a=>a[Math.floor(Math.random()*a.length)];
+const shuffle=a=>{for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a};
+const nm=p=>'Joueur '+(p.id+1);
+const alive=()=>G.p.filter(p=>p.alive);
+
+/* ---------- Composition ---------- */
+function renderCmp(){
+  $('#cmp').innerHTML=Object.keys(ROLES).map(k=>`<div class="row sp" style="padding:2px 0"><span style="color:${ROLES[k].c}">${ROLES[k].n}</span><span class="row stp"><button data-k="${k}" data-d="-1" aria-label="Retirer">-</button><b>${cnt[k]}</b><button data-k="${k}" data-d="1" aria-label="Ajouter">+</button></span></div>`).join('');
+  const t=Object.values(cnt).reduce((a,b)=>a+b,0);$('#tot').textContent=t+' joueurs';$('#n').value=t;
+}
+$('#cmp').onclick=e=>{const b=e.target.closest('button');if(!b)return;cnt[b.dataset.k]=Math.max(0,cnt[b.dataset.k]+ +b.dataset.d);renderCmp()};
+$('#auto').onclick=()=>{
+  const n=Math.max(3,Math.min(40,+$('#n').value||8));
+  const loup=Math.max(1,Math.round(n/4)),voy=n>=5?1:0,sor=n>=7?1:0,cha=n>=8?1:0;
+  cnt={loup,voy,sor,cha,vill:Math.max(0,n-loup-voy-sor-cha)};renderCmp();
+};
+
+/* ---------- Partie ---------- */
+function newGame(){
+  const roles=[];for(const k in cnt)for(let i=0;i<cnt[k];i++)roles.push(k);
+  if(roles.length<2){return}
+  shuffle(roles);
+  const r=$('#stage').getBoundingClientRect(),cx=r.width/2,cy=r.height/2+30,R=Math.min(r.width,r.height)*.33;
+  G={p:roles.map((role,i)=>{const a=-Math.PI/2+2*Math.PI*i/roles.length;return{id:i,role,alive:true,rev:false,x:cx+R*Math.cos(a),y:cy+R*Math.sin(a)}}),day:1,phase:'nuit',save:1,poi:1,known:null,over:null};
+  $('#log').innerHTML='';log('Partie créée : '+roles.length+' joueurs');renderAll();
+}
+function log(t){const d=document.createElement('div');d.textContent=t;$('#log').append(d);$('#log').scrollTop=1e6}
+function kill(p,why){
+  p.alive=false;if($('#rv').checked)p.rev=true;
+  log(`${nm(p)} ${why}`+(p.rev?` (${ROLES[p.role].n})`:''));
+  if(p.role==='cha'){const t=pick(alive());if(t){log(`${nm(p)} tire sur ${nm(t)}`);kill(t,'est abattu')}}
+}
+function check(){
+  const w=alive().filter(p=>p.role==='loup').length,o=alive().length-w;
+  if(w===0)G.over='Le village gagne';else if(w>=o)G.over='Les loups gagnent';
+  if(G.over){log('Fin : '+G.over);G.p.forEach(p=>p.rev=true)}
+}
+function step(){
+  if(!G||G.over)return;
+  if(G.phase==='nuit'){
+    log('Nuit '+G.day);
+    const voy=alive().find(p=>p.role==='voy');
+    if(voy&&(G.known==null||!G.p[G.known].alive)){const t=pick(alive().filter(p=>p!==voy));if(t&&t.role==='loup')G.known=t.id}
+    const sor=alive().find(p=>p.role==='sor');let saved=false;
+    const v=pick(alive().filter(p=>p.role!=='loup'));
+    if(sor&&G.save&&Math.random()<.6){G.save=0;saved=true}
+    if(sor&&G.poi&&Math.random()<.2){G.poi=0;const t=pick(alive().filter(p=>p!==sor));if(t)kill(t,'est empoisonné')}
+    if(saved)log('Personne n\'est dévoré');else if(v&&v.alive)kill(v,'est dévoré');
+    G.phase='jour';
+  }else{
+    log('Jour '+G.day);
+    const al=alive(),k=G.known!=null&&G.p[G.known].alive?G.p[G.known]:null,cnt2={},out=[];
+    al.forEach(v=>{
+      const o=al.filter(p=>p!==v);let t;
+      if(VM[v.id]==='h')t=pick(o);
+      else if(v.role==='loup'){
+        const n=o.filter(p=>p.role!=='loup');
+        t=$('#ds').checked||!n.length?pick(o):pick(n);
+      }else if(k&&k!==v&&(v.role==='voy'||Math.random()<.4))t=k;
+      else t=pick(o);
+      cnt2[t.id]=(cnt2[t.id]||0)+1;out.push(`J${v.id+1}>J${t.id+1}`);
+    });
+    log('Votes : '+out.join(', '));
+    const mx=Math.max(...Object.values(cnt2)),top=al.filter(p=>cnt2[p.id]===mx);
+    if(top.length>1)log('Égalité, tirage au sort');
+    kill(pick(top),`est éliminé (${mx} voix)`);
+    G.day++;G.phase='nuit';
+  }
+  check();renderAll();
+}
+$('#st').onclick=step;
+$('#all').onclick=()=>{let i=0;while(G&&!G.over&&i++<200)step()};
+$('#ng').onclick=newGame;
+$('#ra').onclick=()=>{G&&G.p.forEach(p=>p.rev=true);renderAll()};
+$('#ha').onclick=()=>{G&&G.p.forEach(p=>p.rev=false);renderAll()};
+
+/* ---------- Rendu joueurs ---------- */
+function renderAll(){renderPl();renderTok();
+  $('#stat').textContent=G?(G.over?G.over:`${alive().length} vivants - prochaine étape : ${G.phase} ${G.day}`):''}
+function renderPl(){
+  $('#pl').innerHTML=G?G.p.map(p=>`<div class="row sp ${p.alive?'':'dead'}"><span class="nm">${nm(p)}</span><span style="color:${p.rev?ROLES[p.role].c:'var(--mu)'}">${p.rev?ROLES[p.role].n:'masqué'}</span><span><button data-i="${p.id}" data-a="r">${p.rev?'Masquer':'Révéler'}</button> <button data-i="${p.id}" data-a="v">${p.alive?'Tuer':'Ranimer'}</button> <button data-i="${p.id}" data-a="m" title="Mode de vote du jour">Vote : ${VM[p.id]==='h'?'hasard':'auto'}</button></span></div>`).join(''):'';
+}
+$('#pl').onclick=e=>{const b=e.target.closest('button');if(!b||!G)return;const p=G.p[+b.dataset.i];
+  if(b.dataset.a==='r')p.rev=!p.rev;else if(b.dataset.a==='m')VM[p.id]=VM[p.id]==='h'?'a':'h';else{p.alive=!p.alive;if(!p.alive&&$('#rv').checked)p.rev=true;log(`${nm(p)} ${p.alive?'ranimé':'tué à la main'}`)}
+  renderAll()};
+function renderTok(){
+  const t=$('#tok');t.innerHTML='';if(!G)return;
+  G.p.forEach(p=>{
+    const d=document.createElement('div');d.className='tk'+(p.alive?'':' dead');d.style.left=p.x+'px';d.style.top=p.y+'px';
+    if(p.rev)d.style.borderColor=ROLES[p.role].c;
+    d.innerHTML=`${p.id+1}${p.rev?`<small style="color:${ROLES[p.role].c}">${ROLES[p.role].a}</small>`:''}`;
+    d.title=nm(p);
+    d.ondblclick=()=>{p.rev=!p.rev;renderAll()};
+    d.onpointerdown=e=>{
+      d.setPointerCapture(e.pointerId);const r=t.getBoundingClientRect();
+      d.onpointermove=ev=>{p.x=ev.clientX-r.left;p.y=ev.clientY-r.top;d.style.left=p.x+'px';d.style.top=p.y+'px'};
+      d.onpointerup=()=>{d.onpointermove=d.onpointerup=null};
+    };
+    t.append(d);
+  });
+}
+
+/* ---------- Dessin ---------- */
+const cv=$('#cv'),ctx=cv.getContext('2d');
+const TOOLS=[['pen','Crayon'],['line','Ligne'],['arrow','Flèche'],['rect','Rectangle'],['ell','Ovale'],['text','Texte'],['erase','Gomme'],['move','Déplacer']];
+const COLS=['#e8e8e8','#ff8a8a','#5fc26b','#5aa9f0','#d9902f'];
+let tool='pen',col=COLS[0],wd=3,shapes=[],undo=[],redo=[],cur=null;
+try{shapes=JSON.parse(localStorage.getItem('lg-draw')||'[]')}catch(e){}
+$('#bar').innerHTML=TOOLS.map(([k,n])=>`<button data-t="${k}" class="${k===tool?'on':''}">${n}</button>`).join('')+'<i></i>'
+ +COLS.map(c=>`<button class="sw ${c===col?'on':''}" data-c="${c}" style="background:${c}" aria-label="Couleur"></button>`).join('')+'<i></i>'
+ +[2,4,7].map(w=>`<button data-w="${w}" class="${w===wd?'on':''}">${w===2?'Fin':w===4?'Moyen':'Épais'}</button>`).join('')+'<i></i>'
+ +'<button id="un">Annuler</button><button id="re">Rétablir</button><button id="cl">Tout effacer</button>';
+$('#bar').onclick=e=>{
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.t){tool=b.dataset.t;$('#stage').classList.toggle('mv',tool==='move');cv.classList.toggle('mv',tool==='move');cv.style.pointerEvents=tool==='move'?'none':'auto'}
+  if(b.dataset.c)col=b.dataset.c;
+  if(b.dataset.w)wd=+b.dataset.w;
+  if(b.id==='un'&&undo.length){redo.push(shapes);shapes=undo.pop()}
+  if(b.id==='re'&&redo.length){undo.push(shapes);shapes=redo.pop()}
+  if(b.id==='cl'&&shapes.length){snap();shapes=[]}
+  document.querySelectorAll('#bar [data-t]').forEach(x=>x.classList.toggle('on',x.dataset.t===tool));
+  document.querySelectorAll('#bar [data-c]').forEach(x=>x.classList.toggle('on',x.dataset.c===col));
+  document.querySelectorAll('#bar [data-w]').forEach(x=>x.classList.toggle('on',+x.dataset.w===wd));
+  redraw();persist();
+};
+function snap(){undo.push(shapes.slice());redo=[]}
+function persist(){try{localStorage.setItem('lg-draw',JSON.stringify(shapes))}catch(e){}}
+function size(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);redraw()}
+function paint(s){
+  ctx.strokeStyle=ctx.fillStyle=s.c;ctx.lineWidth=s.w;ctx.lineCap=ctx.lineJoin='round';ctx.beginPath();
+  if(s.t==='pen'){s.p.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));if(s.p.length===1)ctx.lineTo(s.p[0][0]+.1,s.p[0][1]);ctx.stroke()}
+  else if(s.t==='line'||s.t==='arrow'){const[a,b]=s.p;ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);
+    if(s.t==='arrow'){const g=Math.atan2(b[1]-a[1],b[0]-a[0]),h=10+s.w*2;[.45,-.45].forEach(o=>{ctx.moveTo(b[0],b[1]);ctx.lineTo(b[0]-h*Math.cos(g-o),b[1]-h*Math.sin(g-o))})}ctx.stroke()}
+  else if(s.t==='rect'){const[a,b]=s.p;ctx.strokeRect(a[0],a[1],b[0]-a[0],b[1]-a[1])}
+  else if(s.t==='ell'){const[a,b]=s.p;ctx.ellipse((a[0]+b[0])/2,(a[1]+b[1])/2,Math.abs(b[0]-a[0])/2,Math.abs(b[1]-a[1])/2,0,0,7);ctx.stroke()}
+  else if(s.t==='text'){ctx.font=`${14+s.w*4}px system-ui,sans-serif`;ctx.fillText(s.s,s.p[0][0],s.p[0][1])}
+}
+function redraw(){const r=cv.getBoundingClientRect();ctx.clearRect(0,0,r.width,r.height);shapes.forEach(paint);cur&&paint(cur)}
+function samples(s){
+  if(s.t==='pen')return s.p;const[a,b]=s.p,o=[];
+  if(s.t==='text')return[[a[0]+s.s.length*4,a[1]-8]];
+  const seg=(u,v)=>{for(let i=0;i<=20;i++)o.push([u[0]+(v[0]-u[0])*i/20,u[1]+(v[1]-u[1])*i/20])};
+  if(s.t==='line'||s.t==='arrow')seg(a,b);
+  else if(s.t==='rect'){seg(a,[b[0],a[1]]);seg([b[0],a[1]],b);seg(b,[a[0],b[1]]);seg([a[0],b[1]],a)}
+  else for(let i=0;i<40;i++){const g=i/40*6.283;o.push([(a[0]+b[0])/2+(b[0]-a[0])/2*Math.cos(g),(a[1]+b[1])/2+(b[1]-a[1])/2*Math.sin(g)])}
+  return o;
+}
+function xy(e){const r=cv.getBoundingClientRect();return[e.clientX-r.left,e.clientY-r.top]}
+function erase(q){const n=shapes.filter(s=>!samples(s).some(z=>Math.hypot(z[0]-q[0],z[1]-q[1])<12));if(n.length!==shapes.length){if(!cur.d){snap();cur.d=1}shapes=n;redraw()}}
+cv.onpointerdown=e=>{
+  const q=xy(e);
+  if(tool==='text'){const s=prompt('Texte :');if(s){snap();shapes.push({t:'text',p:[q],s,c:col,w:wd});redraw();persist()}return}
+  cv.setPointerCapture(e.pointerId);
+  if(tool==='erase'){cur={t:'x'};erase(q);return}
+  cur={t:tool,p:tool==='pen'?[q]:[q,q],c:col,w:wd};
+};
+cv.onpointermove=e=>{
+  if(!cur)return;const q=xy(e);
+  if(tool==='erase'){erase(q);return}
+  if(tool==='pen')cur.p.push(q);else cur.p[1]=q;redraw();
+};
+cv.onpointerup=()=>{
+  if(!cur)return;
+  if(cur.t!=='x'){snap();shapes.push(cur)}
+  cur=null;redraw();persist();
+};
+addEventListener('resize',size);
+addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key==='z'){e.preventDefault();$('#un').click()}});
+
+renderCmp();size();newGame();
+</script>
+</body>
+</html>
